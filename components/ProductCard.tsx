@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Star, ShieldCheck, MessageCircle, Trash2, Clock, Lock } from "lucide-react";
+import { Star, ShieldCheck, MessageCircle, Trash2, Clock, Lock, AlertTriangle } from "lucide-react";
 import { useApp, type Item } from "@/context/AppContext";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -44,8 +44,18 @@ export default function ProductCard({ item, onDeleteSuccess }: { item: Item, onD
   const ownerAlias = item.owner_name || item.owner?.split("@")[0].split(".").slice(-1)[0] || "Owner";
   const isOwner = user?.id === item.owner_id;
   
-  // 🔥 Sync check: item status directly from passed prop
+  // Basic check if item is unavailable
   const isRented = (item as any).is_available === false;
+
+  // 🔥 THE SMART TIMER LOGIC
+  const activeRental = (item as any).rentals?.find((r: any) => r.status === "active");
+  const isOverdue = (() => {
+    if (!activeRental || !activeRental.expected_return_at) return false;
+    const now = new Date();
+    const expectedReturn = new Date(activeRental.expected_return_at);
+    // Overdue if time has passed AND owner hasn't uploaded after_photo
+    return now > expectedReturn && !activeRental.after_image;
+  })();
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -75,20 +85,27 @@ export default function ProductCard({ item, onDeleteSuccess }: { item: Item, onD
           loading="lazy"
         />
         
+        {/* 🔥 SMART OVERLAY BASED ON TIMER */}
         {isRented && (
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center transition-all">
-             <div className="bg-amber-500 text-white text-[10px] font-black px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-xl animate-pulse">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center transition-all z-10">
+            {isOverdue ? (
+              <div className="bg-rose-500 text-white text-[10px] font-black px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-xl animate-pulse border border-rose-400">
+                <AlertTriangle className="w-3 h-3" /> OVERDUE: VERIFYING
+              </div>
+            ) : (
+              <div className="bg-amber-500 text-white text-[10px] font-black px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-xl">
                 <Lock className="w-3 h-3" /> RENTED OUT
-             </div>
+              </div>
+            )}
           </div>
         )}
 
-        <span className={`absolute top-2 left-2 text-[11px] font-semibold px-2.5 py-1 rounded-full ${CATEGORY_STYLES[item.category] ?? "bg-[#004643]/10 text-[#004643]"}`}>
+        <span className={`absolute top-2 left-2 text-[11px] font-semibold px-2.5 py-1 rounded-full z-20 ${CATEGORY_STYLES[item.category] ?? "bg-[#004643]/10 text-[#004643]"}`}>
           {item.category}
         </span>
 
         {isOwner && (
-          <button onClick={handleDelete} className="absolute top-2 right-2 bg-red-500/90 hover:bg-red-600 text-white p-2 rounded-full shadow-sm transition-all z-10 hover:scale-105">
+          <button onClick={handleDelete} className="absolute top-2 right-2 bg-red-500/90 hover:bg-red-600 text-white p-2 rounded-full shadow-sm transition-all z-20 hover:scale-105">
             <Trash2 className="w-3.5 h-3.5" />
           </button>
         )}
@@ -120,12 +137,12 @@ export default function ProductCard({ item, onDeleteSuccess }: { item: Item, onD
             <button disabled className="w-full py-2.5 bg-[#004643]/5 border border-[#004643]/10 text-[#004643]/30 text-sm font-bold rounded-xl cursor-not-allowed">Your Item</button>
           ) : isRented ? (
             <div className="flex items-center gap-2">
-              <div className="flex-1 bg-amber-50 border border-amber-200 py-2 rounded-xl flex flex-col items-center justify-center opacity-80">
-                <span className="text-amber-700 text-[9px] font-black uppercase tracking-tighter flex items-center gap-1">
-                  <Clock className="w-2.5 h-2.5" /> Booked For
+              <div className={`flex-1 border py-2 rounded-xl flex flex-col items-center justify-center opacity-80 transition-colors ${isOverdue ? 'bg-rose-50 border-rose-200' : 'bg-amber-50 border-amber-200'}`}>
+                <span className={`${isOverdue ? 'text-rose-700' : 'text-amber-700'} text-[9px] font-black uppercase tracking-tighter flex items-center gap-1`}>
+                  <Clock className="w-2.5 h-2.5" /> {isOverdue ? 'Verification' : 'Booked For'}
                 </span>
                 <span className="text-[#004643] text-[11px] font-black leading-tight">
-                   {(item as any).last_rental_days || '—'} Days
+                   {isOverdue ? 'PENDING' : `${(item as any).last_rental_days || '—'} Days`}
                 </span>
               </div>
               <Link href={`/chat?newUserId=${item.owner_id}&newUserName=${encodeURIComponent(item.owner_name || "Owner")}`} className="flex items-center justify-center p-2.5 bg-[#004643]/10 text-[#004643] rounded-xl hover:bg-[#004643]/20 active:scale-95 transition-all">

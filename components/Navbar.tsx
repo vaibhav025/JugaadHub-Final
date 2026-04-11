@@ -8,6 +8,8 @@ import { supabase } from "@/lib/supabaseClient";
 
 // 🔥 Naya Digilocker Modal Import Kiya
 import DigilockerModal from "@/components/DigilockerModal"; 
+// 🔥 THE GLOBAL OFFER RADAR IMPORT
+import OfferListener from "@/components/OfferListener";
 
 export default function Navbar() {
   const { user, setUser, setShowLoginModal, setShowAddItemModal, searchQuery, setSearchQuery, unreadCount, showToast, items } = useApp();
@@ -229,6 +231,9 @@ export default function Navbar() {
           onSuccess={() => showToast({ message: "KYC Verified Successfully via DigiLocker!", type: "success" })} 
         />
       )}
+
+      {/* 🔥 THE GLOBAL OFFER RADAR */}
+      <OfferListener />
     </>
   );
 }
