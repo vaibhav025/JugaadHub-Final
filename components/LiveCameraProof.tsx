@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Camera, X, CheckCircle2, Loader2, RefreshCcw, ShieldCheck } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
-import { useApp } from "@/context/AppContext"; // 🔥 useApp added!
+import { useApp } from "@/context/AppContext";
 
 interface Props {
   rentalId: string;
@@ -13,7 +13,7 @@ interface Props {
 }
 
 export default function LiveCameraProof({ rentalId, type, onClose, onSuccess }: Props) {
-  const { sendMessage } = useApp(); // 🔥 init hook
+  const { sendMessage } = useApp(); 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
@@ -95,64 +95,71 @@ export default function LiveCameraProof({ rentalId, type, onClose, onSuccess }: 
         .from('handover_images')
         .getPublicUrl(fileName);
 
-      // 2. Settlement & Return Logic
-      if (type === "after") {
-        // A. Fetch rental details (INCLUDING payment_method)
-        const { data: rental, error: fetchError } = await supabase
-          .from('rentals')
-          .select('renter_id, deposit, product_id, payment_method')
-          .eq('id', rentalId)
-          .single();
+      // 🔥 2. FETCH CURRENT DB STATE
+      // Check if the OTHER proof already exists
+      const { data: rental, error: fetchError } = await supabase
+        .from('rentals')
+        .select('renter_id, deposit, product_id, payment_method, before_image, after_image')
+        .eq('id', rentalId)
+        .single();
 
-        if (fetchError || !rental) throw new Error("Could not find rental details for settlement.");
+      if (fetchError || !rental) throw new Error("Could not find rental details.");
 
-        // B. RESTORE ITEM AVAILABILITY
+      // 🔥 3. SMART ESCROW LOGIC (Check if BOTH proofs are now present)
+      let isReadyToSettle = false;
+
+      // If we are uploading AFTER proof, check if BEFORE proof exists
+      if (type === "after" && rental.before_image) {
+        isReadyToSettle = true;
+      }
+      
+      // If we are uploading BEFORE proof, check if AFTER proof mysteriously exists
+      if (type === "before" && rental.after_image) {
+         isReadyToSettle = true;
+      }
+
+      // 🔥 4. UPDATE DATABASE (Save the photo first)
+      const updatePayload: any = {
+        [type === "before" ? "before_image" : "after_image"]: publicUrl
+      };
+
+      // If BOTH proofs are present, initiate settlement!
+      if (isReadyToSettle) {
+        updatePayload.status = "completed";
+      }
+
+      const { error: dbError } = await supabase
+        .from('rentals')
+        .update(updatePayload)
+        .eq('id', rentalId);
+
+      if (dbError) throw dbError;
+
+      // 🔥 5. RUN SETTLEMENT TASKS (ONLY IF READY)
+      if (isReadyToSettle) {
+        // A. RESTORE ITEM AVAILABILITY
         const { error: itemError } = await supabase
           .from('items')
           .update({ is_available: true })
           .eq('id', rental.product_id);
         
-        if (itemError) throw new Error("Failed to update item availability.");
+        if (itemError) console.error("Failed to update item availability.");
 
-        // C. SMART REFUND LOGIC AND REAL NOTIFICATION 🔥
+        // B. REFUND LOGIC & MESSAGING
         if (!rental.payment_method || rental.payment_method === 'wallet') {
-          // Refund to Wallet
           const { error: refundError } = await supabase.rpc('add_to_wallet', {
             target_user_id: rental.renter_id,
             amount: rental.deposit
           });
           if (refundError) console.error("Wallet Refund failed:", refundError);
 
-          // Real Message to Renter for Wallet Refund
-          await sendMessage(`💰 REFUND SUCCESSFUL\n\nYour item has been safely returned. The Security Deposit of ₹${rental.deposit} has been credited back to your JugaadHub Wallet.`, rental.renter_id);
-
-        } else if (rental.payment_method === 'upi') {
-          // Real Message to Renter for UPI Refund
-          await sendMessage(`💸 DEPOSIT REFUND INITIATED\n\nYour rented item was safely returned to the owner!\n\nA refund of ₹${rental.deposit} has been initiated to your original UPI payment method. It will reflect in your bank account shortly.\n\nThanks for renting on JugaadHub!`, rental.renter_id);
+          await sendMessage(`💰 REFUND SUCCESSFUL\n\nYour item has been safely returned. Both proofs are verified. The Security Deposit of ₹${rental.deposit} has been credited back to your JugaadHub Wallet.`, rental.renter_id);
+        } else if (rental.payment_method === 'upi' || rental.payment_method === 'razorpay') {
+          await sendMessage(`💸 DEPOSIT REFUND INITIATED\n\nBoth proofs verified! Your rented item was safely returned to the owner!\n\nA refund of ₹${rental.deposit} has been initiated to your original payment method. It will reflect in your bank account shortly.\n\nThanks for renting on JugaadHub!`, rental.renter_id);
         }
-
-        // D. COMPLETE RENTAL RECORD
-        const { error: dbError } = await supabase
-          .from('rentals')
-          .update({ 
-            after_image: publicUrl, 
-            status: 'completed' 
-          })
-          .eq('id', rentalId);
-
-        if (dbError) throw dbError;
-
-      } else {
-        // Handover Proof (Before) logic
-        const { error: handoverError } = await supabase
-          .from('rentals')
-          .update({ before_image: publicUrl })
-          .eq('id', rentalId);
-        
-        if (handoverError) throw handoverError;
       }
 
-      // 3. Success Feedback and Close
+      // 6. Success Feedback and Close
       setTimeout(() => {
         onSuccess(publicUrl);
         onClose();

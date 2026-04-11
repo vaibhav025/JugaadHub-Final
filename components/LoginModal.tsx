@@ -44,6 +44,28 @@ export default function LoginModal() {
     close();
   };
 
+  // 🔥 GOOGLE LOGIN LOGIC ADDED HERE
+  const handleGoogleLogin = async () => {
+    try {
+      setLoading(true);
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          // Login hone ke baad user ko wapas home page par bhej dega
+          redirectTo: `${window.location.origin}/`, 
+        },
+      });
+
+      if (error) throw error;
+      // Note: We don't close modal here manually because OAuth redirects the whole page.
+      
+    } catch (err: any) {
+      console.error("Google Auth Error:", err.message);
+      showToast({ message: "Google Login Failed!", type: "error" });
+      setLoading(false);
+    }
+  };
+
   // 1️⃣ STEP 1: Handle Email & Password Submit
   const handleInitialSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -126,16 +148,6 @@ export default function LoginModal() {
   };
 
   // 2️⃣ STEP 2: Verify OTP (For New Users)
-  const handleVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmedEmail = email.trim();
-    const otpCode = password; // Reuse variable for OTP input in step 2 (or keep separate, I made a new input for it below)
-
-    // Wait, let's keep OTP separate from password state
-    // Check the form below
-  };
-
-  // Separate OTP verify handler
   const [otp, setOtp] = useState("");
   const verifyFinalOtp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -177,7 +189,7 @@ export default function LoginModal() {
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
       onClick={(e) => e.target === e.currentTarget && close()}
     >
-      <div className="bg-[#F0EDE5] rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
+      <div className="bg-[#F0EDE5] rounded-3xl shadow-2xl w-full max-w-md overflow-hidden" style={{ animation: "slideUp 0.3s ease-out" }}>
         {/* Header */}
         <div className="bg-gradient-to-br from-[#004643] to-[#004643]/80 px-6 pt-8 pb-10 relative">
           <button onClick={close} className="absolute top-4 right-4 p-2 rounded-xl bg-white/20 text-[#F0EDE5] hover:bg-white/30 transition">
@@ -212,47 +224,71 @@ export default function LoginModal() {
         <div className={`px-6 pb-8 space-y-4 ${step === 1 ? "pt-5" : "pt-8"}`}>
           
           {step === 1 ? (
-            <form onSubmit={handleInitialSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-[#004643] mb-1.5">Student Email</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name.enroll@std.ggsipu.ac.in"
-                  className="w-full px-4 py-3 rounded-xl border border-[#004643]/20 bg-[#004643]/5 text-[#004643] placeholder:text-[#004643]/30 text-sm focus:outline-none focus:ring-2 focus:ring-[#004643]/40 focus:border-[#004643]/40"
-                  autoFocus
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-[#004643] mb-1.5">Password</label>
-                <div className="relative">
+            <>
+              <form onSubmit={handleInitialSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-semibold text-[#004643] mb-1.5">Student Email</label>
                   <input
-                    type={showPw ? "text" : "password"}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Create or enter password"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="name.enroll@std.ggsipu.ac.in"
                     className="w-full px-4 py-3 rounded-xl border border-[#004643]/20 bg-[#004643]/5 text-[#004643] placeholder:text-[#004643]/30 text-sm focus:outline-none focus:ring-2 focus:ring-[#004643]/40 focus:border-[#004643]/40"
+                    autoFocus
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowPw((v) => !v)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#004643]/40"
-                  >
-                    {showPw ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                  </button>
                 </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-[#004643] mb-1.5">Password</label>
+                  <div className="relative">
+                    <input
+                      type={showPw ? "text" : "password"}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Create or enter password"
+                      className="w-full px-4 py-3 rounded-xl border border-[#004643]/20 bg-[#004643]/5 text-[#004643] placeholder:text-[#004643]/30 text-sm focus:outline-none focus:ring-2 focus:ring-[#004643]/40 focus:border-[#004643]/40"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPw((v) => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#004643]/40 hover:text-[#004643] transition"
+                    >
+                      {showPw ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3.5 mt-2 bg-[#004643] text-[#F0EDE5] font-bold rounded-2xl hover:bg-[#004643]/80 transition shadow-lg shadow-[#004643]/20 disabled:opacity-60"
+                >
+                  {loading ? "Processing..." : "Continue"}
+                </button>
+              </form>
+
+              {/* 🔥 OR Divider */}
+              <div className="flex items-center my-6">
+                <div className="flex-1 border-t border-[#004643]/10"></div>
+                <span className="px-3 text-[10px] font-bold text-[#004643]/40 uppercase tracking-widest">OR</span>
+                <div className="flex-1 border-t border-[#004643]/10"></div>
               </div>
 
+              {/* 🔥 Google Auth Button */}
               <button
-                type="submit"
+                type="button"
+                onClick={handleGoogleLogin}
                 disabled={loading}
-                className="w-full py-3.5 mt-2 bg-[#004643] text-[#F0EDE5] font-bold rounded-2xl hover:bg-[#004643]/80 transition disabled:opacity-60"
+                className="w-full flex items-center justify-center gap-3 bg-white text-[#004643] border-2 border-[#004643]/10 py-3.5 px-6 rounded-2xl font-black shadow-sm hover:bg-[#004643]/5 hover:border-[#004643]/20 transition-all active:scale-95 disabled:opacity-60"
               >
-                {loading ? "Processing..." : "Continue"}
+                <img
+                  src="https://www.svgrepo.com/show/475656/google-color.svg"
+                  alt="Google"
+                  className="w-5 h-5"
+                />
+                Continue with Google
               </button>
-            </form>
+            </>
           ) : (
             <form onSubmit={verifyFinalOtp} className="space-y-4">
               <div>
@@ -271,7 +307,7 @@ export default function LoginModal() {
               <button
                 type="submit"
                 disabled={loading || otp.length < 8}
-                className="w-full py-3.5 mt-2 bg-[#004643] text-[#F0EDE5] font-bold rounded-2xl hover:bg-[#004643]/80 transition disabled:opacity-60"
+                className="w-full py-3.5 mt-2 bg-[#004643] text-[#F0EDE5] font-bold rounded-2xl hover:bg-[#004643]/80 transition shadow-lg shadow-[#004643]/20 disabled:opacity-60"
               >
                 {loading ? "Verifying..." : "Verify & Sign In"}
               </button>

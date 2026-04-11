@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Wallet, TrendingUp, History, CheckCircle2, Clock, PlusCircle, ShieldCheck, ArrowDownToLine, X, Loader2, Building2, ArrowUpRight, Camera, ExternalLink } from "lucide-react";
+import { ArrowLeft, Wallet, TrendingUp, History, CheckCircle2, PlusCircle, ShieldCheck, ArrowDownToLine, X, Loader2, Building2, ArrowUpRight, Camera, ExternalLink } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { supabase } from "@/lib/supabaseClient";
 import AddMoneyModal from "@/components/AddMoneyModal";
@@ -34,13 +34,43 @@ export default function WalletPage() {
       .single();
     if (profileData) setWalletBalance(profileData.wallet_balance || 0);
 
-    const { data: rentalsData } = await supabase
+    const { data: rentalsData, error } = await supabase
       .from("rentals")
-      .select("*")
+      .select(`*, items(title)`)
       .or(`owner_id.eq.${user.id},renter_id.eq.${user.id}`)
       .order("created_at", { ascending: false });
 
-    if (rentalsData) setTransactions(rentalsData);
+    if (error) {
+      console.error("Transaction fetch error:", error.message);
+    } else if (rentalsData) {
+      const ownerIds = [...new Set(rentalsData.map(r => r.owner_id).filter(Boolean))];
+      
+      // 🔥 FIX: "id, name" ki jagah "*" lagaya taaki missing column ka error na aaye
+      const { data: ownersData, error: profileErr } = await supabase
+        .from("profiles")
+        .select("*")
+        .in("id", ownerIds);
+
+      if (profileErr) {
+        console.error("Profile Fetch Error:", profileErr.message);
+      }
+
+      const ownerNamesMap: Record<string, string> = {};
+      if (ownersData) {
+        ownersData.forEach(owner => {
+          // 🔥 FIX: Jo bhi naam ka column database mein hoga, wo utha lega!
+          ownerNamesMap[owner.id] = owner.name || owner.full_name || owner.username || owner.email?.split('@')[0] || "Owner";
+        });
+      }
+
+      const finalTransactions = rentalsData.map(txn => ({
+        ...txn,
+        actual_owner_name: ownerNamesMap[txn.owner_id] || "Owner"
+      }));
+
+      setTransactions(finalTransactions);
+    }
+    
     setLoading(false);
   };
 
@@ -151,6 +181,11 @@ export default function WalletPage() {
                   const isOwner = txn.owner_id === user.id;
                   const amountToShow = isOwner ? txn.total_rent : txn.total_amount;
                   
+                  const itemName = txn.product_name || txn.items?.title || "Item #" + txn.product_id?.substring(0,4);
+                  
+                  // 🔥 NEW: Ab Renter aur Owner dono ke asli naam aayenge!
+                  const otherPartyName = isOwner ? (txn.renter_name || "User") : txn.actual_owner_name;
+                  
                   return (
                     <div key={idx} className="p-4 sm:p-5 flex items-center justify-between hover:bg-[#004643]/[0.02] transition">
                       <div className="flex items-center gap-4">
@@ -159,10 +194,10 @@ export default function WalletPage() {
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="font-bold text-[#004643] text-sm truncate">
-                            {isOwner ? "Rental Income Received" : "Paid for Rental"}
+                            {isOwner ? `Rented to ${otherPartyName}` : `Borrowed from ${otherPartyName}`}
                           </p>
                           <p className="text-xs text-[#004643]/50 font-medium mt-0.5 truncate">
-                            {isOwner ? `From: ${txn.renter_name || "User"}` : `Item ID: #${txn.product_id?.substring(0,6)}`}
+                            {itemName}
                           </p>
                           
                           {/* 🔥 DYNAMIC PROOF VIEW SECTION */}
@@ -191,7 +226,7 @@ export default function WalletPage() {
                           {txn.status === 'completed' ? 'Settled' : 'In Escrow'}
                         </span>
 
-                        {/* 🔥 ACTION BUTTONS: Sirf tab dikhao jab image missing ho aur rental active ho */}
+                        {/* 🔥 ACTION BUTTONS */}
                         {txn.status !== 'completed' && (
                           <div className="mt-2">
                             {((isOwner && !txn.before_image) || (!isOwner && !txn.after_image)) ? (

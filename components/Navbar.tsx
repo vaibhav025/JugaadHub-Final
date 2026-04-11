@@ -71,16 +71,18 @@ export default function Navbar() {
     <>
       <nav className="sticky top-0 z-40 bg-[#F0EDE5]/95 backdrop-blur-md border-b border-[#004643]/10 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center gap-3">
-          {/* Logo */}
-          <Link href="/" className="flex items-center gap-2 shrink-0 select-none">
-            <div className="w-8 h-8 bg-[#004643] rounded-lg flex items-center justify-center shadow-sm shadow-[#004643]/20">
-              <span className="text-[#F0EDE5] font-black text-sm tracking-tighter">JH</span>
+          
+          {/* 🔥 Logo Section - Perfectly Resized */}
+          <Link href="/" className="flex items-center gap-2 shrink-0 select-none hover:opacity-90 transition-opacity">
+            <div className="flex items-center justify-center w-14 h-14 sm:w-20 sm:h-16 -ml-2"> {/* Container size fix karne ke liye */}
+              <img 
+                src="/JugaadHub Logo.png" 
+                alt="JugaadHub Logo" 
+                className="w-full h-full object-contain drop-shadow-sm" 
+              />
             </div>
             <span className="font-black text-xl tracking-tight text-[#004643]">
               Jugaad<span className="text-[#004643]/70">Hub</span>
-            </span>
-            <span className="hidden sm:block text-[10px] font-semibold text-[#004643] bg-[#004643]/10 border border-[#004643]/20 rounded-full px-2 py-0.5 ml-1">
-              USICT
             </span>
           </Link>
 

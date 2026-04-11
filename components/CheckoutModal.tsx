@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, ShieldCheck, CheckCircle2, Copy, Wallet, AlertCircle, QrCode, Loader2, MessageSquareText } from "lucide-react";
+import { X, ShieldCheck, CheckCircle2, Copy, Wallet, AlertCircle, Loader2, MessageSquareText, CreditCard } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 
-type FlowState = "confirm" | "qr" | "processing" | "success" | "otp";
+type FlowState = "confirm" | "processing" | "success" | "otp";
 
 const PLATFORM_FEE = 9; 
 
@@ -16,7 +16,7 @@ export default function CheckoutModal() {
   const router = useRouter(); 
 
   const [flow, setFlow] = useState<FlowState>("confirm");
-  const [method, setMethod] = useState<"wallet" | "upi">("wallet");
+  const [method, setMethod] = useState<"wallet" | "razorpay">("wallet");
   const [days, setDays] = useState(1);
   const [otp, setOtp] = useState("");
   const [renterBalance, setRenterBalance] = useState<number>(0);
@@ -48,11 +48,21 @@ export default function CheckoutModal() {
 
   if (!item) return null;
 
-  // Dynamic calculations based on Negotiation vs Direct Buy
   const activeRent = isNegotiating ? offeredRent : item.dailyRent;
   const totalRent = activeRent * days;
   const totalBlocked = totalRent + item.deposit + PLATFORM_FEE;
   const hasInsufficientBalance = renterBalance < totalBlocked;
+
+  // 🔥 RAZORPAY SCRIPT LOADER
+  const initializeRazorpay = () => {
+    return new Promise((resolve) => {
+      const script = document.createElement("script");
+      script.src = "https://checkout.razorpay.com/v1/checkout.js";
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
 
   const handleProceed = async () => {
     if (!user || !item.owner_id) {
@@ -75,14 +85,13 @@ export default function CheckoutModal() {
           total_amount: totalBlocked,
           platform_fee: PLATFORM_FEE, 
           payment_method: method, 
-          status: 'pending', // 🔥 FIX: Kept as pending so DB doesn't reject it
+          status: 'pending', 
           offered_price: offeredRent,
-          offer_status: 'pending' // 🔥 Actual negotiation status
+          offer_status: 'pending' 
         }]);
         
         if (offerError) throw offerError;
 
-        // Send Chat Message
         const offerMsg = `🤝 NEW OFFER: ${item.title}\nDays: ${days}\n\nMy Offer: ₹${offeredRent}/day (Original: ₹${item.dailyRent})\nTotal: ₹${totalBlocked}\n\nCan we finalize this? Please review my offer!`;
         await sendMessage(offerMsg, item.owner_id); 
         
@@ -100,25 +109,68 @@ export default function CheckoutModal() {
     // NORMAL DIRECT PAYMENT FLOW
     if (method === "wallet") {
       if (hasInsufficientBalance) return;
-      processPayment();
+      processDatabaseUpdate("wallet");
     } else {
-      setFlow("qr"); 
+      // TRIGGER RAZORPAY
+      handleRazorpayPayment(); 
     }
   };
 
-  const processPayment = async () => {
-    // 🔥 FIX: Add this safety check. Now TS knows 'user' is definitely not null below this line.
+  const handleRazorpayPayment = async () => {
+    setFlow("processing");
+
+    const res = await initializeRazorpay();
+    if (!res) {
+      showToast({ message: "Razorpay SDK failed to load. Check connection.", type: "error" });
+      setFlow("confirm");
+      return;
+    }
+
+    const options = {
+      key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID, 
+      amount: totalBlocked * 100, 
+      currency: "INR",
+      name: "JugaadHub",
+      description: `Rent ${item.title} for ${days} days`,
+      theme: { color: "#004643" },
+      handler: async function (response: any) {
+        await processDatabaseUpdate("razorpay");
+      },
+      prefill: {
+        name: user?.name || "User",
+        email: user?.email || "user@jugaadhub.com",
+      },
+    };
+
+    try {
+      const paymentObject = new (window as any).Razorpay(options);
+      paymentObject.open();
+      paymentObject.on('payment.failed', function () {
+        showToast({ message: "Payment cancelled or failed.", type: "error" });
+        setFlow("confirm");
+      });
+    } catch (error) {
+      console.error("Razorpay Error:", error);
+      showToast({ message: "Could not open payment gateway.", type: "error" });
+      setFlow("confirm");
+    }
+  };
+
+  const processDatabaseUpdate = async (paymentMethodUsed: "wallet" | "razorpay") => {
     if (!user) return; 
 
     setFlow("processing");
     try {
-      await new Promise((resolve) => setTimeout(resolve, 2000)); 
       const newOtp = String(Math.floor(1000 + Math.random() * 9000));
+      const startDate = new Date();
+      const expectedReturnDate = new Date();
+      expectedReturnDate.setDate(startDate.getDate() + days);
 
-      if (method === "wallet") {
+      if (paymentMethodUsed === "wallet") {
         const { error: deductError } = await supabase.from("profiles").update({ wallet_balance: renterBalance - totalBlocked }).eq("id", user.id);
         if (deductError) throw deductError;
       }
+
       const { error: walletError } = await supabase.rpc('add_to_wallet', { target_user_id: item.owner_id!, amount: totalRent });
       if (walletError) console.error("Owner Wallet Update Failed:", walletError);
 
@@ -133,12 +185,15 @@ export default function CheckoutModal() {
         total_amount: totalBlocked, 
         platform_fee: PLATFORM_FEE, 
         otp: newOtp, 
-        payment_method: method, 
-        status: 'pending' 
+        payment_method: paymentMethodUsed, 
+        status: 'active',
+        offer_status: 'paid',
+        started_at: startDate.toISOString(),
+        expected_return_at: expectedReturnDate.toISOString()
       }]);
       if (rentalError) throw rentalError;
 
-      const automatedMessage = `🚀 RENTAL REQUEST: ${item.title}\nDays: ${days} day(s)\nPaid via: ${method.toUpperCase()}\nTotal Paid by Renter: ₹${totalBlocked}\n\n💰 MONEY CREDITED: ₹${totalRent} has been successfully added to your JugaadHub Wallet!\n\n🔑 HANDOVER OTP: ${newOtp}`;
+      const automatedMessage = `🚀 RENTAL REQUEST: ${item.title}\nDays: ${days} day(s)\nPaid via: ${paymentMethodUsed.toUpperCase()}\nTotal Paid by Renter: ₹${totalBlocked}\n\n💰 MONEY CREDITED: ₹${totalRent} has been successfully added to your JugaadHub Wallet!\n\n🔑 HANDOVER OTP: ${newOtp}`;
       await sendMessage(automatedMessage, item.owner_id!); 
 
       await supabase.from("items").update({ rentals_count: ((item as any).rentals_count || 0) + 1, is_available: false, last_rental_days: days }).eq("id", item.id);
@@ -158,7 +213,7 @@ export default function CheckoutModal() {
   };
 
   const maxAllowedDays = (item as any).max_days || 10;
-  const minOfferLimit = Math.max(10, Math.floor(item.dailyRent * 0.6)); // 40% Max discount allowed
+  const minOfferLimit = Math.max(10, Math.floor(item.dailyRent * 0.6)); 
 
   const handleGoToMessages = () => {
     setCheckoutItem(null);
@@ -177,7 +232,7 @@ export default function CheckoutModal() {
         <div className="flex items-center justify-between px-6 py-5 border-b border-[#004643]/10 bg-white/50">
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-5 h-5 text-[#004643]" />
-            <h2 className="text-lg font-black text-[#004643]">{flow === "confirm" ? "Confirm Rental" : "Escrow"}</h2>
+            <h2 className="text-lg font-black text-[#004643]">Confirm Rental</h2>
           </div>
           {flow !== "processing" && (
             <button onClick={close} className="p-2 rounded-xl hover:bg-[#004643]/10 text-[#004643]/40 transition"><X className="w-5 h-5" /></button>
@@ -234,34 +289,15 @@ export default function CheckoutModal() {
                   <Wallet className={`w-5 h-5 ${method === 'wallet' ? 'text-[#004643]' : 'text-[#004643]/50'}`} />
                   <span className="text-[10px] font-black text-[#004643]">WALLET</span>
                 </button>
-                <button onClick={() => setMethod("upi")} className={`p-3 rounded-2xl border-2 flex flex-col items-center gap-1 ${method === 'upi' ? 'border-[#004643] bg-[#004643]/5' : 'border-[#004643]/10 bg-white'}`}>
-                  <QrCode className={`w-5 h-5 ${method === 'upi' ? 'text-[#004643]' : 'text-[#004643]/50'}`} />
-                  <span className="text-[10px] font-black text-[#004643]">DIRECT UPI</span>
+                <button onClick={() => setMethod("razorpay")} className={`p-3 rounded-2xl border-2 flex flex-col items-center gap-1 ${method === 'razorpay' ? 'border-[#004643] bg-[#004643]/5' : 'border-[#004643]/10 bg-white'}`}>
+                  <CreditCard className={`w-5 h-5 ${method === 'razorpay' ? 'text-[#004643]' : 'text-[#004643]/50'}`} />
+                  <span className="text-[10px] font-black text-[#004643]">RAZORPAY</span>
                 </button>
               </div>
             )}
 
             <button onClick={handleProceed} disabled={!isNegotiating && method === "wallet" && hasInsufficientBalance} className={`w-full py-3.5 font-bold text-base rounded-2xl active:scale-95 transition-all shadow-lg ${isNegotiating ? "bg-indigo-600 text-white shadow-indigo-500/20" : (method === "wallet" && hasInsufficientBalance) ? "bg-red-500 text-white shadow-red-500/20" : "bg-[#004643] text-[#F0EDE5] shadow-[#004643]/20"}`}>
-              {isNegotiating ? "Send Offer to Owner" : (method === "wallet" && hasInsufficientBalance) ? "Low Wallet Balance" : method === "wallet" ? `Pay ₹${totalBlocked.toLocaleString()} via Wallet` : "Generate UPI QR Code"}
-            </button>
-          </div>
-        )}
-
-        {/* QR Code Mock Screen */}
-        {flow === "qr" && (
-          <div className="px-6 py-10 flex flex-col items-center text-center animate-in slide-in-from-right-4">
-            <h3 className="text-xl font-black text-[#004643] mb-2">Scan & Pay ₹{totalBlocked.toLocaleString()}</h3>
-            <p className="text-sm text-[#004643]/60 mb-6">Use GPay, PhonePe, or Paytm</p>
-            
-            <div className="p-3 bg-white border-4 border-[#004643] rounded-2xl shadow-xl mb-6">
-              <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=upi://pay?pa=jugaadhub@ybl&pn=JugaadHub&am=${totalBlocked}`} alt="UPI QR" className="w-40 h-40" />
-            </div>
-            
-            <button onClick={processPayment} className="w-full bg-emerald-500 hover:bg-emerald-600 text-white py-3.5 rounded-2xl font-bold transition-all shadow-lg shadow-emerald-500/20">
-              Mock: Simulate Payment Success
-            </button>
-            <button onClick={() => setFlow("confirm")} className="w-full text-[#004643]/60 text-sm font-bold mt-4 hover:text-[#004643]">
-              Go Back
+              {isNegotiating ? "Send Offer to Owner" : (method === "wallet" && hasInsufficientBalance) ? "Low Wallet Balance" : method === "wallet" ? `Pay ₹${totalBlocked.toLocaleString()} via Wallet` : "Pay via Razorpay"}
             </button>
           </div>
         )}
