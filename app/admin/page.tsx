@@ -51,7 +51,8 @@ export default function AdminPage() {
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const router = useRouter();
 
-  // 1. SECURITY LOGIC: Check Role
+  // 1. SECURITY GATEKEEPER: Ensures only users with 'admin' role in Supabase can access this view.
+  // Non-admins or unauthenticated users are immediately bounced back to the landing page.
   useEffect(() => {
     const checkAdminRole = async () => {
       if (!user) {
@@ -98,6 +99,8 @@ export default function AdminPage() {
   const totalEscrowPotential = items.reduce((acc, i) => acc + (i.deposit || 0), 0);
   const platformRevenueReal = dbRentals.reduce((sum, r) => sum + (r.platform_fee || 9), 0);
 
+  //DATA AGGREGATION: Transforms raw DB rental records into a 30-day timeline for Recharts.
+  //It maps platform revenue and rental volume to specific dates to visualize growth trends.
   const chartData = useMemo(() => {
     const last30Days = Array.from({ length: 30 }, (_, i) => {
       const d = new Date();

@@ -13,8 +13,8 @@ const STYLES = {
     icon: <CheckCircle2 className="w-5 h-5 text-white shrink-0" />,
   },
   info: {
-    wrapper: "bg-violet-600 text-white border-violet-700",
-    icon: <Info className="w-5 h-5 text-white shrink-0" />,
+    wrapper: "bg-[#004643] text-[#F0EDE5] border-[#004643]/80",
+    icon: <Info className="w-5 h-5 text-[#F0EDE5] shrink-0" />,
   },
 };
 

@@ -81,7 +81,7 @@ export default function SignupModal() {
           .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
           .join(" ") || "Student";
 
-      setUser({ email: userEmail, name });
+      setUser({ id: data.user.id, email: userEmail, name });
 
       showToast({
         message: `Account created! Welcome ${name} 🎉`,
