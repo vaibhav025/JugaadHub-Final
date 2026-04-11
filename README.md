@@ -92,5 +92,5 @@ Instead of buying expensive items for short-term use, students can:
 - Earn by renting unused items  
 - Build a trusted campus ecosystem  
 
----
+----
 
