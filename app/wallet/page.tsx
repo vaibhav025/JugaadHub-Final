@@ -45,7 +45,6 @@ export default function WalletPage() {
     } else if (rentalsData) {
       const ownerIds = [...new Set(rentalsData.map(r => r.owner_id).filter(Boolean))];
       
-      // 🔥 FIX: "id, name" ki jagah "*" lagaya taaki missing column ka error na aaye
       const { data: ownersData, error: profileErr } = await supabase
         .from("profiles")
         .select("*")
@@ -58,7 +57,6 @@ export default function WalletPage() {
       const ownerNamesMap: Record<string, string> = {};
       if (ownersData) {
         ownersData.forEach(owner => {
-          // 🔥 FIX: Jo bhi naam ka column database mein hoga, wo utha lega!
           ownerNamesMap[owner.id] = owner.name || owner.full_name || owner.username || owner.email?.split('@')[0] || "Owner";
         });
       }
@@ -179,11 +177,19 @@ export default function WalletPage() {
               <div className="divide-y divide-[#004643]/5">
                 {transactions.map((txn, idx) => {
                   const isOwner = txn.owner_id === user.id;
-                  const amountToShow = isOwner ? txn.total_rent : txn.total_amount;
+                  
+                  // 🔥 THE FIX IS HERE: Dynamic Amount Logic
+                  let amountToShow = 0;
+                  if (isOwner) {
+                    amountToShow = txn.total_rent; // Owner ko sirf rent milta hai
+                  } else {
+                    // Agar settled ho gaya hai toh Total se Deposit minus kardo
+                    amountToShow = txn.status === 'completed' 
+                      ? (txn.total_amount - (txn.deposit || 0)) 
+                      : txn.total_amount;
+                  }
                   
                   const itemName = txn.product_name || txn.items?.title || "Item #" + txn.product_id?.substring(0,4);
-                  
-                  // 🔥 NEW: Ab Renter aur Owner dono ke asli naam aayenge!
                   const otherPartyName = isOwner ? (txn.renter_name || "User") : txn.actual_owner_name;
                   
                   return (
@@ -200,7 +206,7 @@ export default function WalletPage() {
                             {itemName}
                           </p>
                           
-                          {/* 🔥 DYNAMIC PROOF VIEW SECTION */}
+                          {/* 🔥 PROOF VIEW SECTION */}
                           {(txn.before_image || txn.after_image) && (
                             <div className="flex flex-wrap gap-2 mt-2">
                               {txn.before_image && (
@@ -273,7 +279,7 @@ export default function WalletPage() {
           onSuccess={(url) => {
             showToast({ message: "Proof Saved! Item is now available & Deposit refunded.", type: "success" });
             fetchData(); 
-            // 🔥 Force refresh taaki Marketplace aur context sync ho jaye
+            // Force refresh to sync global states if needed
             setTimeout(() => {
                 window.location.reload(); 
             }, 1000);

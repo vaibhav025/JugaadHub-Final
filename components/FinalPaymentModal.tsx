@@ -57,7 +57,6 @@ export default function FinalPaymentModal({ rental, onClose }: { rental: any, on
       const expectedReturnDate = new Date();
       expectedReturnDate.setDate(startDate.getDate() + rental.rental_days); 
 
-      // IF WALLET, DEDUCT MONEY FIRST
       if (paymentMethodUsed === "wallet") {
         const { data: profile } = await supabase.from("profiles").select("wallet_balance").eq("id", user?.id).single();
         const freshBalance = profile?.wallet_balance || 0;
@@ -92,6 +91,10 @@ export default function FinalPaymentModal({ rental, onClose }: { rental: any, on
       
       const title = item?.title || "Item";
       await sendMessage(`✅ OFFER PAYMENT DONE!\n\nI have paid ₹${exactTotalPayable} for ${title}. My Handover OTP is: ${newOtp}`, rental.owner_id);
+
+      // 🔥 FAILSAFE: Explicit Toast message with OTP. 
+      // Agar parent component real-time update se modal ko destroy bhi kar de, tab bhi ye OTP Toast user ko screen par zarur dikhega!
+      showToast({ message: `🎉 Payment Success! Handover OTP: ${newOtp}`, type: "success" });
 
       setOtp(newOtp);
       setStep("success");
@@ -129,7 +132,8 @@ export default function FinalPaymentModal({ rental, onClose }: { rental: any, on
         name: "JugaadHub",
         description: `Offer Payment: ${title}`,
         theme: { color: "#004643" },
-        handler: async function () {
+        // 🔥 Arrow function taaki react state properly bound rahe
+        handler: async (response: any) => {
           await executeDatabasePayment("razorpay");
         },
         prefill: {

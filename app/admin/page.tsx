@@ -151,12 +151,19 @@ export default function AdminPage() {
             <ArrowLeft className="w-4 h-4" /> Back to App
           </Link>
           <div className="h-5 w-px bg-[#004643]/20" />
+          
+          {/* 🔥 UPDATED LOGO SECTION 🔥 */}
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 bg-[#004643] rounded-lg flex items-center justify-center">
-              <span className="text-[#F0EDE5] font-black text-xs">J</span>
-            </div>
-            <span className="font-black text-[#004643]">JugaadHub</span>
+            <img 
+              src="/JugaadHub Logo.png" 
+              alt="JugaadHub Logo" 
+              className="w-8 h-8 object-contain drop-shadow-sm" 
+            />
+            <span className="font-black text-xl tracking-tight text-[#004643]">
+              Jugaad<span className="text-[#004643]/70">Hub</span>
+            </span>
           </div>
+
           <div className="ml-auto flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 text-xs font-semibold px-3 py-1.5 rounded-full">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Live · USICT Campus
           </div>
