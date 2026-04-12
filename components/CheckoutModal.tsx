@@ -52,7 +52,10 @@ export default function CheckoutModal() {
   const activeRent = isNegotiating ? offeredRent : item.dailyRent;
   const totalRent = activeRent * days;
   const totalBlocked = totalRent + item.deposit + PLATFORM_FEE;
+  
+  // 🔥 STRICT INSUFFICIENT BALANCE CHECK
   const hasInsufficientBalance = renterBalance < totalBlocked;
+  const isWalletLow = method === "wallet" && hasInsufficientBalance;
 
   // 🔥 RAZORPAY SCRIPT LOADER
   const initializeRazorpay = () => {
@@ -68,6 +71,12 @@ export default function CheckoutModal() {
   const handleProceed = async () => {
     if (!user || !item.owner_id) {
       showToast({ message: "User info missing. Please log in again.", type: "error" });
+      return;
+    }
+
+    // ⛔ FINAL SECURITY LAYER: Drop the process immediately if wallet is low
+    if (isWalletLow) {
+      showToast({ message: "Insufficient Wallet Balance!", type: "error" });
       return;
     }
 
@@ -109,11 +118,8 @@ export default function CheckoutModal() {
 
     // NORMAL DIRECT PAYMENT FLOW
     if (method === "wallet") {
-      // Basic check based on current state (might be stale, but good for first layer)
-      if (hasInsufficientBalance) return; 
       processDatabaseUpdate("wallet");
     } else {
-      // TRIGGER RAZORPAY
       handleRazorpayPayment(); 
     }
   };
@@ -178,17 +184,14 @@ export default function CheckoutModal() {
 
         const freshBalance = profile?.wallet_balance || 0;
         
-        // Update local state to immediately show correct UI if it fails
-        setRenterBalance(freshBalance);
+        setRenterBalance(freshBalance); // Update UI immediately
 
-        // Strict Check: If the real-time balance is less than required, STOP.
         if (freshBalance < totalBlocked) {
           showToast({ message: "Insufficient Wallet Balance! Transaction aborted.", type: "error" });
           setFlow("confirm");
-          return; // ⛔ TRANSACTION STOPPED HERE!
+          return; // ⛔ TRANSACTION STOPPED
         }
 
-        // Agar paisa hai, tabhi FRESH balance se minus hoga, taaki math kharab na ho
         const { error: deductError } = await supabase
           .from("profiles")
           .update({ wallet_balance: freshBalance - totalBlocked })
@@ -309,34 +312,37 @@ export default function CheckoutModal() {
               </div>
             </div>
 
-            {!isNegotiating && (
-              <div className="grid grid-cols-2 gap-3 mt-2">
-                <button 
-                  onClick={() => setMethod("wallet")} 
-                  className={`p-3 rounded-2xl border-2 flex flex-col items-center justify-center gap-1 transition-all ${method === 'wallet' ? 'border-[#004643] bg-[#004643]/5' : 'border-[#004643]/10 bg-white'}`}
-                >
-                  <Wallet className={`w-5 h-5 ${method === 'wallet' ? 'text-[#004643]' : 'text-[#004643]/50'}`} />
-                  <div className="flex flex-col items-center">
-                    <span className="text-[10px] font-black text-[#004643]">WALLET</span>
-                    {/* 🔥 YAHAN CURRENT BALANCE SHOW HOGA 🔥 */}
-                    <span className={`text-[9px] font-bold mt-0.5 ${hasInsufficientBalance ? 'text-red-500' : 'text-[#004643]/60'}`}>
-                      Bal: ₹{renterBalance.toLocaleString()}
-                    </span>
-                  </div>
-                </button>
-                
-                <button 
-                  onClick={() => setMethod("razorpay")} 
-                  className={`p-3 rounded-2xl border-2 flex flex-col items-center justify-center gap-1 transition-all ${method === 'razorpay' ? 'border-[#004643] bg-[#004643]/5' : 'border-[#004643]/10 bg-white'}`}
-                >
-                  <CreditCard className={`w-5 h-5 ${method === 'razorpay' ? 'text-[#004643]' : 'text-[#004643]/50'}`} />
-                  <span className="text-[10px] font-black text-[#004643]">RAZORPAY</span>
-                </button>
-              </div>
-            )}
+            {/* 🔥 PAYMENT METHODS - Always visible */}
+            <div className="grid grid-cols-2 gap-3 mt-2">
+              <button 
+                onClick={() => setMethod("wallet")} 
+                className={`p-3 rounded-2xl border-2 flex flex-col items-center justify-center gap-1 transition-all ${method === 'wallet' ? 'border-[#004643] bg-[#004643]/5' : 'border-[#004643]/10 bg-white'}`}
+              >
+                <Wallet className={`w-5 h-5 ${method === 'wallet' ? 'text-[#004643]' : 'text-[#004643]/50'}`} />
+                <div className="flex flex-col items-center">
+                  <span className="text-[10px] font-black text-[#004643]">WALLET</span>
+                  <span className={`text-[9px] font-bold mt-0.5 ${hasInsufficientBalance ? 'text-red-500' : 'text-[#004643]/60'}`}>
+                    Bal: ₹{renterBalance.toLocaleString()}
+                  </span>
+                </div>
+              </button>
+              
+              <button 
+                onClick={() => setMethod("razorpay")} 
+                className={`p-3 rounded-2xl border-2 flex flex-col items-center justify-center gap-1 transition-all ${method === 'razorpay' ? 'border-[#004643] bg-[#004643]/5' : 'border-[#004643]/10 bg-white'}`}
+              >
+                <CreditCard className={`w-5 h-5 ${method === 'razorpay' ? 'text-[#004643]' : 'text-[#004643]/50'}`} />
+                <span className="text-[10px] font-black text-[#004643]">RAZORPAY</span>
+              </button>
+            </div>
 
-            <button onClick={handleProceed} disabled={!isNegotiating && method === "wallet" && hasInsufficientBalance} className={`w-full py-3.5 font-bold text-base rounded-2xl active:scale-95 transition-all shadow-lg ${isNegotiating ? "bg-indigo-600 text-white shadow-indigo-500/20" : (method === "wallet" && hasInsufficientBalance) ? "bg-red-500 text-white shadow-red-500/20" : "bg-[#004643] text-[#F0EDE5] shadow-[#004643]/20"}`}>
-              {isNegotiating ? "Send Offer to Owner" : (method === "wallet" && hasInsufficientBalance) ? "Low Wallet Balance" : method === "wallet" ? `Pay ₹${totalBlocked.toLocaleString()} via Wallet` : "Pay via Razorpay"}
+            {/* 🔥 DYNAMIC MAIN BUTTON */}
+            <button 
+              onClick={handleProceed} 
+              disabled={isWalletLow} 
+              className={`w-full py-3.5 font-bold text-base rounded-2xl active:scale-95 transition-all shadow-lg ${isWalletLow ? "bg-red-500 text-white shadow-red-500/20 opacity-90" : isNegotiating ? "bg-indigo-600 text-white shadow-indigo-500/20" : "bg-[#004643] text-[#F0EDE5] shadow-[#004643]/20"}`}
+            >
+              {isWalletLow ? "Low Wallet Balance" : isNegotiating ? "Send Offer to Owner" : method === "wallet" ? `Pay ₹${totalBlocked.toLocaleString()} via Wallet` : "Pay via Razorpay"}
             </button>
           </div>
         )}
