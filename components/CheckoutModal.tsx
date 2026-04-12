@@ -36,6 +36,7 @@ export default function CheckoutModal() {
     }
   }, [item]);
 
+  // Initial balance load (can get stale)
   useEffect(() => {
     const fetchBalance = async () => {
       if (user) {
@@ -108,7 +109,8 @@ export default function CheckoutModal() {
 
     // NORMAL DIRECT PAYMENT FLOW
     if (method === "wallet") {
-      if (hasInsufficientBalance) return;
+      // Basic check based on current state (might be stale, but good for first layer)
+      if (hasInsufficientBalance) return; 
       processDatabaseUpdate("wallet");
     } else {
       // TRIGGER RAZORPAY
@@ -167,7 +169,31 @@ export default function CheckoutModal() {
       expectedReturnDate.setDate(startDate.getDate() + days);
 
       if (paymentMethodUsed === "wallet") {
-        const { error: deductError } = await supabase.from("profiles").update({ wallet_balance: renterBalance - totalBlocked }).eq("id", user.id);
+        // 🔥🔥🔥 THE BULLETPROOF FIX: FRESH BALANCE CHECK 🔥🔥🔥
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("wallet_balance")
+          .eq("id", user.id)
+          .single();
+
+        const freshBalance = profile?.wallet_balance || 0;
+        
+        // Update local state to immediately show correct UI if it fails
+        setRenterBalance(freshBalance);
+
+        // Strict Check: If the real-time balance is less than required, STOP.
+        if (freshBalance < totalBlocked) {
+          showToast({ message: "Insufficient Wallet Balance! Transaction aborted.", type: "error" });
+          setFlow("confirm");
+          return; // ⛔ TRANSACTION STOPPED HERE!
+        }
+
+        // Agar paisa hai, tabhi FRESH balance se minus hoga, taaki math kharab na ho
+        const { error: deductError } = await supabase
+          .from("profiles")
+          .update({ wallet_balance: freshBalance - totalBlocked })
+          .eq("id", user.id);
+          
         if (deductError) throw deductError;
       }
 
@@ -285,11 +311,24 @@ export default function CheckoutModal() {
 
             {!isNegotiating && (
               <div className="grid grid-cols-2 gap-3 mt-2">
-                <button onClick={() => setMethod("wallet")} className={`p-3 rounded-2xl border-2 flex flex-col items-center gap-1 ${method === 'wallet' ? 'border-[#004643] bg-[#004643]/5' : 'border-[#004643]/10 bg-white'}`}>
+                <button 
+                  onClick={() => setMethod("wallet")} 
+                  className={`p-3 rounded-2xl border-2 flex flex-col items-center justify-center gap-1 transition-all ${method === 'wallet' ? 'border-[#004643] bg-[#004643]/5' : 'border-[#004643]/10 bg-white'}`}
+                >
                   <Wallet className={`w-5 h-5 ${method === 'wallet' ? 'text-[#004643]' : 'text-[#004643]/50'}`} />
-                  <span className="text-[10px] font-black text-[#004643]">WALLET</span>
+                  <div className="flex flex-col items-center">
+                    <span className="text-[10px] font-black text-[#004643]">WALLET</span>
+                    {/* 🔥 YAHAN CURRENT BALANCE SHOW HOGA 🔥 */}
+                    <span className={`text-[9px] font-bold mt-0.5 ${hasInsufficientBalance ? 'text-red-500' : 'text-[#004643]/60'}`}>
+                      Bal: ₹{renterBalance.toLocaleString()}
+                    </span>
+                  </div>
                 </button>
-                <button onClick={() => setMethod("razorpay")} className={`p-3 rounded-2xl border-2 flex flex-col items-center gap-1 ${method === 'razorpay' ? 'border-[#004643] bg-[#004643]/5' : 'border-[#004643]/10 bg-white'}`}>
+                
+                <button 
+                  onClick={() => setMethod("razorpay")} 
+                  className={`p-3 rounded-2xl border-2 flex flex-col items-center justify-center gap-1 transition-all ${method === 'razorpay' ? 'border-[#004643] bg-[#004643]/5' : 'border-[#004643]/10 bg-white'}`}
+                >
                   <CreditCard className={`w-5 h-5 ${method === 'razorpay' ? 'text-[#004643]' : 'text-[#004643]/50'}`} />
                   <span className="text-[10px] font-black text-[#004643]">RAZORPAY</span>
                 </button>
