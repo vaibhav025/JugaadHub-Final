@@ -6,20 +6,48 @@ import { ArrowLeft, Send, ShieldCheck, Lock, MessageSquareOff, User as UserIcon 
 import { useApp } from "@/context/AppContext";
 import { supabase } from "@/lib/supabaseClient";
 
-// ── Privacy Masking ────────────────────────────────────────────────────────────
-const PHONE_RE = /\b[6-9]\d{9}\b|\b\d{10}\b/g;
-const UPI_RE = /\b[\w.\-+]+@(okaxis|oksbi|okicici|okhdfcbank|paytm|ybl|ibl|axl|upi|apl|pingpay|waicici|icicipay|pockets|nsdl|idbi|federal|kotak|indusind)\b/gi;
+// ── Aggressive Privacy Masking (OpSec Level: Paranoid) ─────────────────────────
+const CREDIT_CARD_RE = /(?:\d[\s\-\.\u200B_~,]*){14,15}\d/g; 
+const AADHAAR_RE = /(?:\d[\s\-\.\u200B_~,]*){11}\d/g; 
+const PHONE_RE = /(?:\+?91[\s\-\.\u200B_~,]*)?[6-9](?:[\s\-\.\u200B_~,]*\d){9}/g; 
+
+// 🔥 THE UPI NUKES 🔥
+// 1. Catches standard symbols (@, [at]) for ANY extension (Paytm, Email, Crypto, Unknown Banks)
+const UNIVERSAL_VPA_RE = /[A-Za-z0-9.\-_]{2,}[\s\u200B]*(@|\[at\]|\(at\))[\s\u200B]*[A-Za-z0-9]{2,20}/gi;
+// 2. Catches the bare word "at" only if followed by a known Indian PSP/Bank (prevents false positives)
+const OBFUSCATED_UPI_RE = /[A-Za-z0-9.\-_]{2,}[\s\u200B]+(at)[\s\u200B]+(paytm|ybl|ibl|axl|upi|ok[a-z]+|icici|sbi|hdfc|axis|kotak|yes|indus|fed|idfc|amazon|slice|post|navi|jio|airtel|freecharge|mobi|bhim|jupiter)[a-zA-Z]*/gi;
+
+const PAN_CARD_RE = /[A-Z]{5}[\s\-\.\u200B]*[0-9]{4}[\s\-\.\u200B]*[A-Z]{1}/gi; 
+const IFSC_RE = /[A-Z]{4}[\s\-\.\u200B]*0[\s\-\.\u200B]*[A-Z0-9]{6}/gi; 
+const CRYPTO_ETH_RE = /0x[\s\u200B]*([a-fA-F0-9][\s\u200B]*){40}/gi; 
+const CRYPTO_BTC_RE = /(?:1|3)(?:[1-9A-HJ-NP-Za-km-z][\s\u200B]*){25,34}|bc1(?:[a-zA-HJ-NP-Z0-9][\s\u200B]*){39,59}/g; 
+const IPV4_RE = /(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)[\s\u200B]*\.[\s\u200B]*(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)[\s\u200B]*\.[\s\u200B]*(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)[\s\u200B]*\.[\s\u200B]*(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)/g; 
+const JWT_RE = /eyJ[\w\-]+[\s\u200B]*\.[\s\u200B]*[\w\-]+[\s\u200B]*\.[\s\u200B]*[\w\-]+/g;
 
 function maskText(raw: string): React.ReactNode[] {
   const MASK = "🔒 [HIDDEN BY JUGAADHUB]";
-  let text = raw.replace(PHONE_RE, MASK).replace(UPI_RE, MASK);
+  
+  // Execution order matters. Mask longest/most specific patterns first.
+  let text = raw
+    .replace(JWT_RE, MASK)
+    .replace(CREDIT_CARD_RE, MASK) 
+    .replace(AADHAAR_RE, MASK)     
+    .replace(PHONE_RE, MASK)       
+    .replace(CRYPTO_ETH_RE, MASK)
+    .replace(CRYPTO_BTC_RE, MASK)
+    .replace(PAN_CARD_RE, MASK)
+    .replace(IFSC_RE, MASK)
+    .replace(IPV4_RE, MASK)
+    .replace(UNIVERSAL_VPA_RE, MASK) // Catches all emails and proper UPIs
+    .replace(OBFUSCATED_UPI_RE, MASK); // Catches spaced out "at paytm" tricks
+
   const parts = text.split(MASK);
   const result: React.ReactNode[] = [];
   parts.forEach((part, i) => {
     if (part) result.push(<span key={`p${i}`}>{part}</span>);
     if (i < parts.length - 1) {
       result.push(
-        <span key={`m${i}`} className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-[11px] font-bold mx-0.5 border border-red-200">
+        <span key={`m${i}`} className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-[11px] font-bold mx-0.5 border border-red-200" title="Sensitive Data Redacted">
           <Lock className="w-2.5 h-2.5" /> HIDDEN
         </span>
       );
@@ -96,7 +124,7 @@ export default function ChatPage() {
     return Array.from(contactMap.values());
   }, [chatMessages, user, contactDetails, urlData]); 
 
-  const [activeContact, setActiveContact] = useState<any>(null); // 🔥 Initial state null rakha hai
+  const [activeContact, setActiveContact] = useState<any>(null);
 
   useEffect(() => {
     const fetchContactInfo = async () => {
@@ -133,21 +161,18 @@ export default function ChatPage() {
     fetchContactInfo();
   }, [chatMessages.length]);
 
-  // 🔥 YAHAN FIX KIYA HAI: URL parameters se aaye hue user ko active set karo
   useEffect(() => {
     if (dynamicContacts.length > 0) {
       if (urlData.id) {
-        // Agar URL mein newUserId hai, toh usko dhoondh kar active contact banao
         const targetContact = dynamicContacts.find((c: any) => c.id === urlData.id);
         if (targetContact && activeContact?.id !== targetContact.id) {
           setActiveContact(targetContact);
         }
       } else if (!activeContact) {
-        // Default behaviour: top chat kholo agar koi URL param nahi hai
         setActiveContact(dynamicContacts[0]);
       }
     }
-  }, [dynamicContacts, urlData.id]); // Dependency array me urlData.id zaroori hai
+  }, [dynamicContacts, urlData.id]); 
 
   const currentChat = useMemo(() => {
     if (!activeContact || !user) return [];
@@ -187,7 +212,6 @@ export default function ChatPage() {
     }
   }, [contactDetails, activeContact]);
 
-
   const handleSend = async () => {
     const trimmed = input.trim();
     if (!trimmed || !user || !activeContact) return;
@@ -223,7 +247,7 @@ export default function ChatPage() {
 
         <div className="mx-3 mt-3 mb-2 flex items-start gap-2 p-3 bg-red-50 border border-red-100 rounded-xl">
           <ShieldCheck className="w-4 h-4 text-red-500 shrink-0" />
-          <p className="text-[11px] text-red-600 font-medium leading-tight">Anti-Leak active: PII will be masked.</p>
+          <p className="text-[11px] text-red-600 font-medium leading-tight">Paranoid Anti-Leak Active: All PII and Virtual Payment Addresses masked.</p>
         </div>
 
         <div className="flex-1 overflow-y-auto py-2">
