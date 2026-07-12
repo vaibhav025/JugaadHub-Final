@@ -82,7 +82,7 @@ export default function MarketplaceFeed({ activeCategory }: Props) {
           <div className="inline-flex items-center justify-center w-16 h-16 bg-[#004643]/5 rounded-full mb-4">
             <SearchX className="w-8 h-8 text-[#004643]/20" />
           </div>
-          <h2 className="text-xl font-black text-[#004643]">Bhai, kuch nahi mila!</h2>
+          <h2 className="text-xl font-black text-[#004643]">Sorry, the items are not listed yet!!!</h2>
           <p className="text-[#004643]/40 text-sm mt-1 max-w-xs mx-auto">
             Aapki search query ke hisaab se koi gear available nahi hai.
           </p>
