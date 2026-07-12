@@ -11,7 +11,7 @@ const CATEGORIES: { label: Category; icon: React.ReactNode; color: string }[] = 
     color: "bg-[#004643]/10 text-[#004643] border-[#004643]/20",
   },
   {
-    label: "Lab Gear",
+    label: "Lab Gears",
     icon: <FlaskConical className="w-6 h-6" strokeWidth={1.75} />,
     color: "bg-emerald-100 text-emerald-700 border-emerald-200",
   },
