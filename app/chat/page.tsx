@@ -2,21 +2,16 @@
 
 import { useState, useRef, useEffect, useMemo } from "react";
 import Link from "next/link";
-import { ArrowLeft, Send, ShieldCheck, Lock, MessageSquareOff, User as UserIcon } from "lucide-react";
+import { ArrowLeft, Send, ShieldCheck, Lock, MessageSquareOff, User as UserIcon, Bot } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { supabase } from "@/lib/supabaseClient";
 
-// ── Aggressive Privacy Masking (OpSec Level: Paranoid) ─────────────────────────
+// ── Aggressive Privacy Masking ─────────────────────────
 const CREDIT_CARD_RE = /(?:\d[\s\-\.\u200B_~,]*){14,15}\d/g; 
 const AADHAAR_RE = /(?:\d[\s\-\.\u200B_~,]*){11}\d/g; 
 const PHONE_RE = /(?:\+?91[\s\-\.\u200B_~,]*)?[6-9](?:[\s\-\.\u200B_~,]*\d){9}/g; 
-
-// 🔥 THE UPI NUKES 🔥
-// 1. Catches standard symbols (@, [at]) for ANY extension (Paytm, Email, Crypto, Unknown Banks)
 const UNIVERSAL_VPA_RE = /[A-Za-z0-9.\-_]{2,}[\s\u200B]*(@|\[at\]|\(at\))[\s\u200B]*[A-Za-z0-9]{2,20}/gi;
-// 2. Catches the bare word "at" only if followed by a known Indian PSP/Bank (prevents false positives)
 const OBFUSCATED_UPI_RE = /[A-Za-z0-9.\-_]{2,}[\s\u200B]+(at)[\s\u200B]+(paytm|ybl|ibl|axl|upi|ok[a-z]+|icici|sbi|hdfc|axis|kotak|yes|indus|fed|idfc|amazon|slice|post|navi|jio|airtel|freecharge|mobi|bhim|jupiter)[a-zA-Z]*/gi;
-
 const PAN_CARD_RE = /[A-Z]{5}[\s\-\.\u200B]*[0-9]{4}[\s\-\.\u200B]*[A-Z]{1}/gi; 
 const IFSC_RE = /[A-Z]{4}[\s\-\.\u200B]*0[\s\-\.\u200B]*[A-Z0-9]{6}/gi; 
 const CRYPTO_ETH_RE = /0x[\s\u200B]*([a-fA-F0-9][\s\u200B]*){40}/gi; 
@@ -26,20 +21,11 @@ const JWT_RE = /eyJ[\w\-]+[\s\u200B]*\.[\s\u200B]*[\w\-]+[\s\u200B]*\.[\s\u200B]
 
 function maskText(raw: string): React.ReactNode[] {
   const MASK = "🔒 [HIDDEN BY JUGAADHUB]";
-  
-  // Execution order matters. Mask longest/most specific patterns first.
   let text = raw
-    .replace(JWT_RE, MASK)
-    .replace(CREDIT_CARD_RE, MASK) 
-    .replace(AADHAAR_RE, MASK)     
-    .replace(PHONE_RE, MASK)       
-    .replace(CRYPTO_ETH_RE, MASK)
-    .replace(CRYPTO_BTC_RE, MASK)
-    .replace(PAN_CARD_RE, MASK)
-    .replace(IFSC_RE, MASK)
-    .replace(IPV4_RE, MASK)
-    .replace(UNIVERSAL_VPA_RE, MASK) // Catches all emails and proper UPIs
-    .replace(OBFUSCATED_UPI_RE, MASK); // Catches spaced out "at paytm" tricks
+    .replace(JWT_RE, MASK).replace(CREDIT_CARD_RE, MASK).replace(AADHAAR_RE, MASK)     
+    .replace(PHONE_RE, MASK).replace(CRYPTO_ETH_RE, MASK).replace(CRYPTO_BTC_RE, MASK)
+    .replace(PAN_CARD_RE, MASK).replace(IFSC_RE, MASK).replace(IPV4_RE, MASK)
+    .replace(UNIVERSAL_VPA_RE, MASK).replace(OBFUSCATED_UPI_RE, MASK);
 
   const parts = text.split(MASK);
   const result: React.ReactNode[] = [];
@@ -63,6 +49,8 @@ function formatTime(timestamp: string) {
 
 const COLORS = ["bg-[#004643]", "bg-blue-600", "bg-emerald-600", "bg-rose-600", "bg-amber-600"];
 
+const AI_AGENT_ID = "jugaadhub-ai-agent";
+
 export default function ChatPage() {
   const { chatMessages, sendMessage, user, unreadCount, markChatAsRead } = useApp();
   const [input, setInput] = useState("");
@@ -70,8 +58,19 @@ export default function ChatPage() {
 
   const [contactDetails, setContactDetails] = useState<Record<string, { is_verified: boolean; name: string }>>({});
   const [urlData, setUrlData] = useState({ id: "", name: "" });
-
   const [showMobileList, setShowMobileList] = useState(true);
+
+  // Local state strictly for AI Agent messages
+  const [aiMessages, setAiMessages] = useState<any[]>([
+    {
+      id: "init",
+      text: "Hi! I am your Jugaad AI Assistant. Tell me what you need to rent, or ask me to book a handover meeting!",
+      sender_id: AI_AGENT_ID,
+      created_at: new Date().toISOString(),
+      sender_name: "Jugaad AI"
+    }
+  ]);
+  const [isAiTyping, setIsAiTyping] = useState(false);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -85,7 +84,6 @@ export default function ChatPage() {
     }
   }, []);
 
-  // Dynamic Contact List Generator
   const dynamicContacts = useMemo(() => {
     if (!user) return [];
     const contactMap = new Map();
@@ -113,15 +111,19 @@ export default function ChatPage() {
           color: COLORS[contactId.length % COLORS.length],
           is_verified: contactDetails[contactId]?.is_verified || false
         });
-      } else if (!isMine) {
-        const existing = contactMap.get(contactId);
-        existing.name = msg.sender_name;
-        existing.avatar = msg.sender_name.charAt(0).toUpperCase();
-        existing.is_verified = contactDetails[contactId]?.is_verified || false;
       }
     });
 
-    return Array.from(contactMap.values());
+    // Inject AI Agent at the top of the contacts list
+    const aiContact = {
+      id: AI_AGENT_ID,
+      name: "Jugaad AI Assistant",
+      avatar: <Bot className="w-5 h-5 text-white" />,
+      color: "bg-blue-600",
+      is_verified: true
+    };
+
+    return [aiContact, ...Array.from(contactMap.values())];
   }, [chatMessages, user, contactDetails, urlData]); 
 
   const [activeContact, setActiveContact] = useState<any>(null);
@@ -129,7 +131,9 @@ export default function ChatPage() {
   useEffect(() => {
     const fetchContactInfo = async () => {
       if (!user || dynamicContacts.length === 0) return;
-      const userIds = dynamicContacts.map(c => c.id);
+      const userIds = dynamicContacts.map(c => c.id).filter(id => id !== AI_AGENT_ID);
+
+      if(userIds.length === 0) return;
 
       try {
         const { data, error } = await supabase
@@ -157,9 +161,8 @@ export default function ChatPage() {
         console.error("Error fetching contact details:", err);
       }
     };
-
     fetchContactInfo();
-  }, [chatMessages.length]);
+  }, [chatMessages.length, dynamicContacts.length]);
 
   useEffect(() => {
     if (dynamicContacts.length > 0) {
@@ -169,48 +172,35 @@ export default function ChatPage() {
           setActiveContact(targetContact);
         }
       } else if (!activeContact) {
-        setActiveContact(dynamicContacts[0]);
+        setActiveContact(dynamicContacts[0]); // Defaults to AI Agent
       }
     }
   }, [dynamicContacts, urlData.id]); 
 
   const currentChat = useMemo(() => {
     if (!activeContact || !user) return [];
+    if (activeContact.id === AI_AGENT_ID) return aiMessages;
+
     return chatMessages.filter(msg => 
       (msg.sender_id === user.id && msg.receiver_id === activeContact.id) ||
       (msg.sender_id === activeContact.id && msg.receiver_id === user.id)
     );
-  }, [chatMessages, activeContact, user]);
+  }, [chatMessages, activeContact, user, aiMessages]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [currentChat]);
+  }, [currentChat, isAiTyping]);
 
   useEffect(() => {
-    if (activeContact && unreadCount > 0 && user) {
+    if (activeContact && unreadCount > 0 && user && activeContact.id !== AI_AGENT_ID) {
       const hasUnread = chatMessages.some(
         (msg) => msg.sender_id === activeContact.id && msg.receiver_id === user.id && msg.is_read === false
       );
-
       if (hasUnread) {
         markChatAsRead(activeContact.id);
       }
     }
   }, [activeContact, chatMessages, unreadCount, user, markChatAsRead]);
-
-  useEffect(() => {
-    if (activeContact && contactDetails[activeContact.id]) {
-      const updatedInfo = contactDetails[activeContact.id];
-      if (activeContact.is_verified !== updatedInfo.is_verified || (updatedInfo.name && activeContact.name === "User")) {
-        setActiveContact((prev: any) => ({
-          ...prev, 
-          is_verified: updatedInfo.is_verified,
-          name: updatedInfo.name || prev.name,
-          avatar: (updatedInfo.name || prev.name).charAt(0).toUpperCase()
-        }));
-      }
-    }
-  }, [contactDetails, activeContact]);
 
   const handleSend = async () => {
     const trimmed = input.trim();
@@ -218,7 +208,45 @@ export default function ChatPage() {
     
     const currentInput = trimmed;
     setInput(""); 
-    await sendMessage(currentInput, activeContact.id);
+
+    if (activeContact.id === AI_AGENT_ID) {
+      // Handle AI Agent Chat Flow
+      const newUserMsg = {
+        id: Date.now().toString(),
+        text: currentInput,
+        sender_id: user.id,
+        created_at: new Date().toISOString()
+      };
+      setAiMessages(prev => [...prev, newUserMsg]);
+      setIsAiTyping(true);
+
+      try {
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userMessage: currentInput }),
+        });
+        const data = await response.json();
+
+        // 🎉 Added `items: data.items` here so we can render the cards!
+        const newAiMsg = {
+          id: (Date.now() + 1).toString(),
+          text: data.reply || "Something went wrong.",
+          items: data.items || null, 
+          sender_id: AI_AGENT_ID,
+          created_at: new Date().toISOString(),
+          sender_name: "Jugaad AI"
+        };
+        setAiMessages(prev => [...prev, newAiMsg]);
+      } catch (error) {
+        setAiMessages(prev => [...prev, { id: Date.now().toString(), text: "Network error. Try again.", sender_id: AI_AGENT_ID, created_at: new Date().toISOString(), sender_name: "Jugaad AI" }]);
+      } finally {
+        setIsAiTyping(false);
+      }
+    } else {
+      // Normal P2P Chat Flow
+      await sendMessage(currentInput, activeContact.id);
+    }
   };
 
   if (!user) {
@@ -251,45 +279,36 @@ export default function ChatPage() {
         </div>
 
         <div className="flex-1 overflow-y-auto py-2">
-          {dynamicContacts.length === 0 ? (
-            <p className="text-xs text-center text-[#004643]/30 mt-10">No ongoing chats.</p>
-          ) : (
-            dynamicContacts.map((c: any) => {
-              const hasUnreadFromThisContact = chatMessages.some(
-                (msg) => msg.sender_id === c.id && msg.receiver_id === user.id && msg.is_read === false
-              );
+          {dynamicContacts.map((c: any) => {
+            const hasUnreadFromThisContact = c.id !== AI_AGENT_ID && chatMessages.some(
+              (msg) => msg.sender_id === c.id && msg.receiver_id === user.id && msg.is_read === false
+            );
 
-              return (
-                <div
-                  key={c.id}
-                  onClick={() => {
-                    setActiveContact(c);
-                    setShowMobileList(false);
-                  }}
-                  className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-all ${
-                    c.id === activeContact?.id ? "bg-[#004643]/10 border-r-2 border-[#004643]" : "hover:bg-[#004643]/5"
-                  }`}
-                >
-                  <div className={`w-10 h-10 rounded-full ${c.color} flex items-center justify-center text-white font-bold shrink-0 relative`}>
-                    {c.avatar}
-                    {hasUnreadFromThisContact && (
-                      <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 border-2 border-[#F0EDE5] rounded-full"></span>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1">
-                      <p className={`text-sm truncate ${hasUnreadFromThisContact ? "font-black text-[#004643]" : "font-semibold text-[#004643]"}`}>
-                        {c.name}
-                      </p>
-                      {c.is_verified && (
-                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 fill-emerald-100 shrink-0" />
-                      )}
-                    </div>
+            return (
+              <div
+                key={c.id}
+                onClick={() => { setActiveContact(c); setShowMobileList(false); }}
+                className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-all ${
+                  c.id === activeContact?.id ? "bg-[#004643]/10 border-r-2 border-[#004643]" : "hover:bg-[#004643]/5"
+                }`}
+              >
+                <div className={`w-10 h-10 rounded-full ${c.color} flex items-center justify-center text-white font-bold shrink-0 relative`}>
+                  {c.avatar}
+                  {hasUnreadFromThisContact && (
+                    <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 border-2 border-[#F0EDE5] rounded-full"></span>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1">
+                    <p className={`text-sm truncate ${hasUnreadFromThisContact ? "font-black text-[#004643]" : "font-semibold text-[#004643]"}`}>
+                      {c.name}
+                    </p>
+                    {c.is_verified && <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 fill-emerald-100 shrink-0" />}
                   </div>
                 </div>
-              );
-            })
-          )}
+              </div>
+            );
+          })}
         </div>
       </aside>
 
@@ -308,16 +327,18 @@ export default function ChatPage() {
                 <div className="flex items-center gap-1.5">
                   <p className="font-bold text-[#004643] text-sm truncate">{activeContact.name}</p>
                   {activeContact.is_verified && (
-                    <div title="KYC Verified via DigiLocker" className="flex items-center justify-center p-0.5 rounded-full bg-emerald-100 shrink-0">
+                    <div title="Verified User" className="flex items-center justify-center p-0.5 rounded-full bg-emerald-100 shrink-0">
                       <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 fill-emerald-100" />
                     </div>
                   )}
                 </div>
               </div>
-              <div className="ml-auto hidden xs:flex items-center gap-1.5 bg-green-50 border border-green-100 rounded-full px-3 py-1">
-                <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-                <span className="text-[10px] font-bold text-green-600 uppercase">Live</span>
-              </div>
+              {activeContact.id !== AI_AGENT_ID && (
+                <div className="ml-auto hidden xs:flex items-center gap-1.5 bg-green-50 border border-green-100 rounded-full px-3 py-1">
+                  <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+                  <span className="text-[10px] font-bold text-green-600 uppercase">Live</span>
+                </div>
+              )}
             </div>
 
             <div className="flex-1 overflow-y-auto px-4 py-5 space-y-4">
@@ -333,13 +354,45 @@ export default function ChatPage() {
                     <div key={msg.id} className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
                       {!isMine && (
                         <div className="w-7 h-7 rounded-full bg-[#004643]/10 flex items-center justify-center text-[10px] font-bold mr-2 mt-auto text-[#004643]">
-                          {msg.sender_name?.charAt(0) || activeContact.avatar}
+                          {msg.sender_id === AI_AGENT_ID ? <Bot className="w-4 h-4" /> : (msg.sender_name?.charAt(0) || activeContact.avatar)}
                         </div>
                       )}
-                      <div className={`max-w-[85%] sm:max-w-[70%] rounded-2xl px-4 py-2.5 shadow-sm ${
+                      <div className={`max-w-[90%] sm:max-w-[70%] rounded-2xl px-4 py-2.5 shadow-sm ${
                         isMine ? "bg-[#004643] text-[#F0EDE5] rounded-br-none" : "bg-white border border-[#004643]/10 text-[#004643] rounded-bl-none"
                       }`}>
-                        <p className="text-sm leading-relaxed break-words">{maskText(msg.text)}</p>
+                        {/* Ensure whitespace is preserved for markdown-style lists */}
+                        <p className="text-sm leading-relaxed break-words whitespace-pre-wrap">{maskText(msg.text)}</p>
+                        
+                        {/* 🎉 This block renders the cards if data.items was sent! */}
+                        {msg.items && msg.items.length > 0 && (
+                          <div className="flex flex-col gap-3 mt-4">
+                            {msg.items.map((item: any) => (
+                              <Link 
+                                href={`/?rent=${item.id}`} 
+                                key={item.id} 
+                                className="flex items-center gap-4 p-3 border border-gray-200 rounded-lg bg-gray-50 hover:bg-white hover:shadow-md hover:border-blue-300 transition-all no-underline"
+                              >
+                                {item.image && (
+                                  <img 
+                                    src={item.image} 
+                                    alt={item.title} 
+                                    className="w-16 h-16 object-cover rounded-md border border-gray-200 shadow-sm"
+                                  />
+                                )}
+                                <div className="flex-1 overflow-hidden text-left">
+                                  <h4 className="font-semibold text-sm m-0 text-gray-800 truncate">{item.title}</h4>
+                                  <p className="text-xs text-gray-500 m-0 line-clamp-1 mt-0.5">{item.description}</p>
+                                  <p className="text-[10px] font-medium text-gray-400 m-0 mt-1">Owner: {item.owner}</p>
+                                </div>
+                                <div className="text-right flex flex-col justify-between h-full min-w-max">
+                                  <p className="font-bold text-sm text-green-600 m-0">₹{item.dailyRent}<span className="text-[10px] text-gray-500 font-normal">/day</span></p>
+                                  <span className="text-xs text-blue-600 font-semibold hover:underline mt-2 inline-block">Rent Now ↗</span>
+                                </div>
+                              </Link>
+                            ))}
+                          </div>
+                        )}
+
                         <p className={`text-[9px] mt-1 text-right font-medium ${isMine ? "text-[#F0EDE5]/50" : "text-[#004643]/30"}`}>
                           {formatTime(msg.created_at)}
                         </p>
@@ -347,6 +400,16 @@ export default function ChatPage() {
                     </div>
                   );
                 })
+              )}
+              {isAiTyping && (
+                <div className="flex justify-start">
+                   <div className="w-7 h-7 rounded-full bg-[#004643]/10 flex items-center justify-center mr-2 mt-auto text-[#004643]"><Bot className="w-4 h-4" /></div>
+                   <div className="bg-white border border-[#004643]/10 rounded-2xl rounded-bl-none px-4 py-3 flex gap-1 items-center">
+                     <div className="w-1.5 h-1.5 bg-[#004643]/40 rounded-full animate-bounce" />
+                     <div className="w-1.5 h-1.5 bg-[#004643]/40 rounded-full animate-bounce delay-100" />
+                     <div className="w-1.5 h-1.5 bg-[#004643]/40 rounded-full animate-bounce delay-200" />
+                   </div>
+                </div>
               )}
               <div ref={endRef} />
             </div>
@@ -368,7 +431,7 @@ export default function ChatPage() {
                 />
                 <button
                   onClick={handleSend}
-                  disabled={!input.trim()}
+                  disabled={!input.trim() || isAiTyping}
                   className="p-3.5 bg-[#004643] text-[#F0EDE5] rounded-2xl hover:bg-[#004643]/80 active:scale-90 disabled:opacity-40 transition-all shadow-lg"
                 >
                   <Send className="w-4 h-4" />
@@ -378,11 +441,8 @@ export default function ChatPage() {
           </>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-[#004643]/30 bg-[#F0EDE5] relative">
-            <button onClick={() => setShowMobileList(true)} className="sm:hidden absolute top-4 left-4 p-2 rounded-xl hover:bg-[#004643]/10 text-[#004643]/40">
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <UserIcon className="w-16 h-16 mb-4 opacity-50" />
-            <p>Select a contact to start chatting</p>
+             <UserIcon className="w-16 h-16 mb-4 opacity-50" />
+             <p>Select a contact to start chatting</p>
           </div>
         )}
       </div>

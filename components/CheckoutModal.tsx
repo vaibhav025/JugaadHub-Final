@@ -305,10 +305,24 @@ export default function CheckoutModal() {
               )}
             </div>
 
+            {/* 🔥 DETAILED BILL BREAKDOWN */}
             <div className="bg-[#004643]/5 rounded-2xl p-4 space-y-2 text-sm">
-              <div className="border-t border-[#004643]/10 pt-2 flex justify-between">
-                <span className="font-bold text-[#004643]">{isNegotiating ? "Total Proposed (inc. Deposit)" : "Total Payable"}</span>
-                <span className="font-black text-[#004643] text-base">₹{totalBlocked.toLocaleString()}</span>
+              <div className="flex justify-between text-[#004643]/70 font-medium">
+                <span>Rent (₹{activeRent} × {days} days)</span>
+                <span>₹{totalRent.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between text-[#004643]/70 font-medium items-center">
+                <span>Security Deposit <span className="text-[10px] text-green-600 font-bold ml-1 bg-green-100 px-1.5 py-0.5 rounded-full">(Refundable)</span></span>
+                <span>₹{item.deposit.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between text-[#004643]/70 font-medium">
+                <span>Platform Fee</span>
+                <span>₹{PLATFORM_FEE.toLocaleString()}</span>
+              </div>
+              
+              <div className="border-t border-[#004643]/10 pt-3 mt-2 flex justify-between">
+                <span className="font-bold text-[#004643]">{isNegotiating ? "Total Proposed" : "Total Payable"}</span>
+                <span className="font-black text-[#004643] text-lg">₹{totalBlocked.toLocaleString()}</span>
               </div>
             </div>
 
